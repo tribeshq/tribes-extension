@@ -8,19 +8,64 @@ import Icon from '../../components/Icon';
 import classNames from 'classnames';
 import { useNavigate } from 'react-router';
 import { notarizeRequest, useRequests } from '../../reducers/requests';
-import { PluginList } from '../../components/PluginList';
-import PluginUploadInfo from '../../components/PluginInfo';
 import { ErrorModal } from '../../components/ErrorModal';
 import { useDispatch } from 'react-redux';
+import {
+  getMaxRecv,
+  getMaxSent,
+  getNotaryApi,
+  getProxyApi,
+} from '../../utils/storage';
 
 export default function Home(): ReactElement {
   const requests = useRequests();
   const navigate = useNavigate();
   const [error, showError] = useState('');
-  const dispatch = useDispatch(); // Usar dispatch para chamar a action
+  const dispatch = useDispatch();
+
+  // Função que simula todas as etapas antes de enviar a request
+  const simulateNotarizationSteps = async (firstGraphqlRequest: any) => {
+    try {
+      const headers = firstGraphqlRequest.requestHeaders.reduce(
+        (acc, header) => {
+          acc[header.name] = header.value ?? ''; // Garante que não seja undefined
+          return acc;
+        },
+        {} as { [key: string]: string },
+      );
+
+      // Coletar os dados necessários da storage
+      const maxSentData = await getMaxSent();
+      const maxRecvData = await getMaxRecv();
+      const notaryUrl = await getNotaryApi();
+      const websocketProxyUrl = await getProxyApi();
+
+      // Criação do objeto RequestHistory
+      const requestHistory = {
+        id: firstGraphqlRequest.requestId,
+        url: firstGraphqlRequest.url,
+        method: firstGraphqlRequest.method,
+        headers,
+        body: firstGraphqlRequest.requestBody ?? '',
+        maxSentData,
+        maxRecvData,
+        notaryUrl,
+        websocketProxyUrl,
+        secretHeaders: [], // Ajustar conforme necessário
+        secretResps: [], // Ajustar conforme necessário
+        status: 'pending', // Simula o status inicial
+      };
+
+      // Retorna o objeto após simular todas as etapas
+      return requestHistory;
+    } catch (err) {
+      showError(`Failed to prepare notarization: ${err.message}`);
+      throw err;
+    }
+  };
 
   // Função para lidar com o clique no botão "we gucci"
-  const handleWeGucciClick = () => {
+  const handleWeGucciClick = async () => {
     // Encontra a primeira request que contenha 'graphql' na URL
     const firstGraphqlRequest = requests.find((request) =>
       request.url.includes('graphql/query'),
@@ -30,21 +75,19 @@ export default function Home(): ReactElement {
       // Se não encontrar uma requisição com 'graphql', exibe um erro
       showError('No request with "graphql" found');
     } else {
-      // Se encontrar, dispara a ação de notarização
-      dispatch(
-        notarizeRequest({
-          id: firstGraphqlRequest.requestId,
-          url: firstGraphqlRequest.url,
-          method: firstGraphqlRequest.method,
-          headers: firstGraphqlRequest.requestHeaders,
-          body: firstGraphqlRequest.requestBody,
-          secretHeaders: [], // Ajustar conforme necessário
-          secretResps: [], // Ajustar conforme necessário
-        }),
-      );
+      try {
+        // Simula todas as etapas antes de enviar a request
+        const preparedRequest =
+          await simulateNotarizationSteps(firstGraphqlRequest);
 
-      // Navega para a tela de notarização
-      navigate(`/notary/${firstGraphqlRequest.requestId}`);
+        // Dispara a ação de notarização somente após todas as etapas serem simuladas
+        dispatch(notarizeRequest(preparedRequest));
+
+        // Navega para a tela de notarização
+        navigate(`/notary/${firstGraphqlRequest.requestId}`);
+      } catch (err) {
+        showError(`Failed to notarize request: ${err.message}`);
+      }
     }
   };
 
