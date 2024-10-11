@@ -3,6 +3,8 @@ import React, {
   ReactElement,
   ReactNode,
   useState,
+  useEffect,
+  useRef,
 } from 'react';
 import Icon from '../../components/Icon';
 import classNames from 'classnames';
@@ -17,21 +19,54 @@ import {
   getProxyApi,
 } from '../../utils/storage';
 import asset1 from '../../assets/img/asset1.svg';
+import { useAllProofHistory } from '../../reducers/history';
 
 export default function Home(): ReactElement {
   const requests = useRequests();
   const navigate = useNavigate();
   const [error, showError] = useState('');
   const dispatch = useDispatch();
+  const history = useAllProofHistory();
+  const prevStatusRef = useRef<{ [id: string]: string }>({});
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const hasGraphqlRequest = requests.some((request) =>
+    request.url.includes('graphql/query'),
+  );
+
+  // use this whenever you need to send the notarized request to any other place
+  useEffect(() => {
+    history.forEach((request) => {
+      const prevStatus = prevStatusRef.current[request.id];
+      if (prevStatus !== request.status) {
+        if (request.status === 'success') {
+          const requestInfo = `${request.method} ${request.url} HTTP/1.1\n`;
+          const headers = Object.entries(request.headers)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join('\n');
+          const body = request.body || '';
+          const alertMessage = `${requestInfo}${headers}\n\n${body}`;
+          alert(alertMessage);
+          setIsProcessing(false);
+        } else if (request.status === 'error') {
+          alert(
+            `Notarization failed for request ${request.id}: ${request.error}`,
+          );
+          setIsProcessing(false);
+        }
+        prevStatusRef.current[request.id] = request.status || '';
+      }
+    });
+  }, [history]);
 
   const simulateNotarizationSteps = async (firstGraphqlRequest: any) => {
     try {
       const headers = firstGraphqlRequest.requestHeaders.reduce(
-        (acc, header) => {
+        (acc: { [key: string]: string }, header: any) => {
           acc[header.name] = header.value ?? '';
           return acc;
         },
-        {} as { [key: string]: string },
+        {},
       );
 
       const maxSentData = await getMaxSent();
@@ -55,7 +90,7 @@ export default function Home(): ReactElement {
       };
 
       return requestHistory;
-    } catch (err) {
+    } catch (err: any) {
       showError(`Failed to prepare notarization: ${err.message}`);
       throw err;
     }
@@ -70,14 +105,14 @@ export default function Home(): ReactElement {
       showError('No request with "graphql" found');
     } else {
       try {
+        setIsProcessing(true);
         const preparedRequest =
           await simulateNotarizationSteps(firstGraphqlRequest);
 
         dispatch(notarizeRequest(preparedRequest));
-
-        // navigate(`/notary/${firstGraphqlRequest.requestId}`);
-      } catch (err) {
+      } catch (err: any) {
         showError(`Failed to notarize request: ${err.message}`);
+        setIsProcessing(false);
       }
     }
   };
@@ -89,22 +124,42 @@ export default function Home(): ReactElement {
     >
       {error && <ErrorModal onClose={() => showError('')} message={error} />}
 
-      {/* Title Section */}
-      <h1 className="text-5xl font-bold text-white mb-6">Verify</h1>
+      <h1 className="text-5xl font-bold text-white mb-6">
+        Verify your identity.
+      </h1>
 
-      {/* Button */}
       <button
         onClick={handleWeGucciClick}
-        className="bg-black text-white px-8 py-4 rounded-full font-bold hover:bg-gray-800 transition-all"
+        className={classNames(
+          'bg-black text-white px-8 py-4 rounded-full font-bold transition-all',
+          {
+            'hover:bg-gray-800': !isProcessing && hasGraphqlRequest,
+            'opacity-50 cursor-not-allowed': isProcessing || !hasGraphqlRequest,
+          },
+        )}
+        disabled={isProcessing || !hasGraphqlRequest}
       >
-        we gucci
+        {isProcessing ? (
+          <div className="flex items-center">
+            <Icon className="animate-spin mr-2" fa="fa-solid fa-spinner" />
+            Processing...
+          </div>
+        ) : (
+          'Verify'
+        )}
       </button>
-      <NavButton fa="fa-solid fa-list" onClick={() => navigate('/history')}>
+      {!hasGraphqlRequest && (
+        <p className="text-red-500 mt-2">Reload the page.</p>
+      )}
+      {/* <NavButton fa="fa-solid fa-list" onClick={() => navigate('/history')}>
         History
-      </NavButton>
+      </NavButton> */}
     </div>
   );
 }
+
+// the NavButton above is only commented since it can be used for debugging later
+// for now all requests are probably stored in the history page, but we gucci
 
 function NavButton(props: {
   fa: string;
