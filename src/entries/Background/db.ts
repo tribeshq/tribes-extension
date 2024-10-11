@@ -394,3 +394,7 @@ export async function getAppState() {
     defaultPluginsInstalled: await getDefaultPluginsInstalled(),
   };
 }
+
+export async function clearNotaryRequests(): Promise<void> {
+  await historyDb.clear();
+}

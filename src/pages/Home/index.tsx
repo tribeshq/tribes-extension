@@ -20,6 +20,7 @@ import {
 } from '../../utils/storage';
 import asset1 from '../../assets/img/asset1.svg';
 import { useAllProofHistory } from '../../reducers/history';
+import { clearNotaryRequests } from '../../entries/Background/db';
 
 export default function Home(): ReactElement {
   const requests = useRequests();
@@ -48,11 +49,21 @@ export default function Home(): ReactElement {
           const alertMessage = `${requestInfo}${headers}\n\n${body}`;
           alert(alertMessage);
           setIsProcessing(false);
+
+          // clear the notary requests after the alert, this is currently done because
+          // we don't really need to store the notarized proofs anywhere.
+          clearNotaryRequests().catch((error) => {
+            console.error('Error clearing notary requests:', error);
+          });
         } else if (request.status === 'error') {
           alert(
             `Notarization failed for request ${request.id}: ${request.error}`,
           );
           setIsProcessing(false);
+
+          clearNotaryRequests().catch((error) => {
+            console.error('Error clearing notary requests:', error);
+          });
         }
         prevStatusRef.current[request.id] = request.status || '';
       }
